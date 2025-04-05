@@ -7,7 +7,6 @@ import com.fantasticsource.tools.Tools;
 import net.minecraft.block.*;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
-import net.minecraft.enchantment.EnchantmentHelper;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.init.Blocks;
 import net.minecraft.init.Items;
@@ -225,10 +224,8 @@ public class HardAsARock
                         if (nonMonolithic) speedMultiplier *= 2;
 
 
-                        //Apply efficiency enchantments, but unlike vanilla, include negative levels
-                        int efficiency = EnchantmentHelper.getEfficiencyModifier(player);
-                        if (efficiency > 0) speedMultiplier *= 1.25 + (efficiency - 1) * 0.05;
-                        else if (efficiency < 0) speedMultiplier /= 1.25 - (efficiency + 1) * 0.05;
+                        //Re-apply any adjustments made from normal mining speed done by vanilla or mods (enchants, potions, etc) up until this point (further adjustments from mods can be done afterwards)
+                        speedMultiplier *= ((PlayerEvent.BreakSpeed) event.originalEvent).getNewSpeed() / player.inventory.getDestroySpeed(block);
 
 
                         //Final global digging speed adjustment
