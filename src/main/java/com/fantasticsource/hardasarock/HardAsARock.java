@@ -7,6 +7,7 @@ import com.fantasticsource.tools.Tools;
 import net.minecraft.block.*;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
+import net.minecraft.enchantment.EnchantmentHelper;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.init.Blocks;
 import net.minecraft.init.Items;
@@ -222,6 +223,12 @@ public class HardAsARock
 
                         //Make non-monolithic blocks mine faster
                         if (nonMonolithic) speedMultiplier *= 2;
+
+
+                        //Apply efficiency enchantments, but unlike vanilla, include negative levels
+                        int efficiency = EnchantmentHelper.getEfficiencyModifier(player);
+                        if (efficiency > 0) speedMultiplier *= 1.25 + (efficiency - 1) * 0.05;
+                        else if (efficiency < 0) speedMultiplier /= 1.25 - (efficiency + 1) * 0.05;
 
 
                         //Final global digging speed adjustment
