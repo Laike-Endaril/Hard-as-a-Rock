@@ -185,7 +185,11 @@ public class HardAsARock
                     //Endgame adjustment; make sure top level tool can mine it's own level of block with 3 connections
                     //This ensures any continuous stone can be mined starting from a corner, if there is one (ie. player-placed and most worldgen)
                     int maxToolLevel = 0;
-                    for (Item.ToolMaterial toolMaterial : Item.ToolMaterial.values()) if (toolMaterial.getHarvestLevel() > maxToolLevel) maxToolLevel = toolMaterial.getHarvestLevel();
+                    for (Item.ToolMaterial toolMaterial : Item.ToolMaterial.values())
+                    {
+                        int materialLevel = getAdjustedHarvestLevel(toolMaterial);
+                        if (materialLevel > maxToolLevel) maxToolLevel = materialLevel;
+                    }
                     if (toolLevel == maxToolLevel) digDifficulty *= 0.33;
 
 
@@ -251,6 +255,11 @@ public class HardAsARock
     {
         //Lowest valid value is 1
         return Tools.max(0, block.getBlock().getHarvestLevel(block)) + 1;
+    }
+
+    public static int getAdjustedHarvestLevel(Item.ToolMaterial material)
+    {
+        return material.getHarvestLevel() + 1;
     }
 
     public static int getAdjustedHarvestLevel(ItemStack stack, EntityPlayer player, IBlockState block)
