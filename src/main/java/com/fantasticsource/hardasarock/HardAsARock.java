@@ -4,16 +4,14 @@ import com.fantasticsource.mctools.BlockProtection;
 import com.fantasticsource.mctools.ImprovedRayTracing;
 import com.fantasticsource.mctools.MCTools;
 import com.fantasticsource.tools.Tools;
-import net.minecraft.block.*;
+import net.minecraft.block.BlockRailBase;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.init.Blocks;
 import net.minecraft.init.Items;
 import net.minecraft.item.Item;
-import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
-import net.minecraft.item.crafting.FurnaceRecipes;
 import net.minecraft.item.crafting.IRecipe;
 import net.minecraft.item.crafting.ShapedRecipes;
 import net.minecraft.util.EnumFacing;
@@ -30,6 +28,7 @@ import net.minecraftforge.event.world.BlockEvent;
 import net.minecraftforge.fml.client.event.ConfigChangedEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
+import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.registry.ForgeRegistries;
 import net.minecraftforge.oredict.OreDictionary;
@@ -39,14 +38,13 @@ import net.minecraftforge.registries.ForgeRegistry;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-@Mod(modid = HardAsARock.MODID, name = HardAsARock.NAME, version = HardAsARock.VERSION, dependencies = "required-after:fantasticlib@[1.12.2.054,)")
+@Mod(modid = HardAsARock.MODID, name = HardAsARock.NAME, version = HardAsARock.VERSION, dependencies = "required-after:fantasticlib@[1.12.2.057,)")
 public class HardAsARock
 {
     public static final String MODID = "hardasarock";
     public static final String NAME = "Hard as a Rock";
     public static final String VERSION = "1.12.2.001";
 
-    public static final ItemStack TEST_PICK = new ItemStack(Items.DIAMOND_PICKAXE);
     public static final HashMap<EntityPlayer, Double> LAST_DIGGING_TIMES = new HashMap<>();
 
 
@@ -78,6 +76,20 @@ public class HardAsARock
         if (event.getModID().equals(MODID)) ConfigManager.sync(MODID, Config.Type.INSTANCE);
     }
 
+
+    @Mod.EventHandler
+    public static void serverStarting(FMLServerStartingEvent event)
+    {
+        MiningData.update();
+    }
+
+    @SubscribeEvent
+    public static void postConfigChanged(ConfigChangedEvent.PostConfigChangedEvent event)
+    {
+        MiningData.update();
+    }
+
+
     @SubscribeEvent
     public static void alterBlock(BlockProtection.AlterBlockEvent event)
     {
@@ -85,7 +97,7 @@ public class HardAsARock
         {
             World world = event.world;
             IBlockState block = world.getBlockState(event.blockPos);
-            if (isPickaxeBlock(block))
+            if (MiningData.isPickaxeBlock(block))
             {
                 if (event.originalEvent instanceof PlayerEvent.BreakSpeed || event.originalEvent instanceof PlayerInteractEvent.LeftClickBlock)
                 {
@@ -126,51 +138,19 @@ public class HardAsARock
                     digDifficulty = 1.0 / (toolLevel + 1 - digDifficulty);
 
 
-                    //Adjust dig difficulty based on connections (how "thick" the current rock is, simplified); non-monolithic blocks ignore connections
+                    //Adjust dig difficulty based on connections (how "thick" the current rock is, simplified)
                     int connections = 0;
-                    BlockPos pos = event.blockPos;
+                    BlockPos pos = event.blockPos, adjacent;
                     ArrayList<BlockPos> obstructions = new ArrayList<>();
-                    boolean nonMonolithic = isNonMonolithic(world, block);
-                    if (!nonMonolithic)
+                    IBlockState adjacentBlock;
+                    for (EnumFacing facing : EnumFacing.values())
                     {
-                        Block blockType = block.getBlock();
-                        BlockPos adjacent;
-                        IBlockState adjacentBlock;
-                        Block adjacentBlockType;
-                        if (blockType == Blocks.STONE)
+                        adjacent = pos.offset(facing);
+                        adjacentBlock = world.getBlockState(adjacent);
+                        if (block.isSideSolid(world, pos, facing) && adjacentBlock.isSideSolid(world, adjacent, facing.getOpposite()) && MiningData.areMonolithic(block, adjacentBlock))
                         {
-                            int meta = blockType.getMetaFromState(block);
-                            if (meta == 0 || meta % 2 == 1)
-                            {
-                                for (EnumFacing facing : EnumFacing.values())
-                                {
-                                    adjacent = pos.offset(facing);
-                                    adjacentBlock = world.getBlockState(adjacent);
-                                    adjacentBlockType = adjacentBlock.getBlock();
-                                    if (adjacentBlockType == Blocks.STONE && adjacentBlockType.getMetaFromState(adjacentBlock) == meta)
-                                    {
-                                        connections++;
-                                        obstructions.add(adjacent);
-                                    }
-                                }
-                            }
-                        }
-                        else
-                        {
-                            for (EnumFacing facing : EnumFacing.values())
-                            {
-                                if (block.isSideSolid(world, pos, facing))
-                                {
-                                    adjacent = pos.offset(facing);
-                                    adjacentBlock = world.getBlockState(adjacent);
-                                    adjacentBlockType = adjacentBlock.getBlock();
-                                    if (adjacentBlockType == blockType && adjacentBlock.isSideSolid(world, adjacent, facing.getOpposite()))
-                                    {
-                                        connections++;
-                                        obstructions.add(adjacent);
-                                    }
-                                }
-                            }
+                            connections++;
+                            obstructions.add(adjacent);
                         }
                     }
                     if (world.isRemote && connections > 1)
@@ -178,8 +158,7 @@ public class HardAsARock
                         //On client only, make particles on obstructing blocks
                         for (BlockPos obstruction : obstructions) createObstructionParticles(world, obstruction);
                     }
-                    connections = Tools.max(1, connections);
-                    digDifficulty *= connections; //digDifficulty now ranges from 5 (5 connections, digging exposed face with minimum tool level) to infinitesimal
+                    digDifficulty *= Tools.max(1, connections); //digDifficulty now ranges from 5 (5 connections, digging exposed face with minimum tool level) to infinitesimal
 
 
                     //Endgame adjustment; make sure top level tool can mine it's own level of block with 3 connections
@@ -220,8 +199,8 @@ public class HardAsARock
                         }
 
 
-                        //Make non-monolithic blocks mine faster
-                        if (nonMonolithic) speedMultiplier *= 2;
+                        //Make non-connected blocks mine faster
+                        if (connections == 0) speedMultiplier *= 2;
 
 
                         //Re-apply any adjustments made from normal mining speed done by vanilla or mods (enchants, potions, etc) up until this point (further adjustments from mods can be done afterwards)
@@ -246,7 +225,7 @@ public class HardAsARock
     {
         IBlockState brokenBlock = event.getState();
         EntityPlayer player = event.getHarvester();
-        if (player != null && isPickaxeBlock(brokenBlock))
+        if (player != null && MiningData.isPickaxeBlock(brokenBlock))
         {
             //Deal additional damage to tool based on how long it took to chop
             ItemStack tool = player.getHeldItemMainhand();
@@ -270,36 +249,6 @@ public class HardAsARock
     {
         //Lowest valid value is 1
         return Tools.max(0, stack.getItem().getHarvestLevel(stack, "pickaxe", player, block)) + 1;
-    }
-
-
-    public static boolean isPickaxeBlock(IBlockState block)
-    {
-        //Special case for buttons (for some reason stone buttons were indestructible)
-        if (block.getBlock() instanceof BlockButton) return false;
-
-        //Also allow gathering of PVJ clutter by hand
-        if ("vibrantjourneys.blocks.BlockGroundCover".equals(block.getBlock().getClass().getName())) return false;
-
-        //Weird way of checking, but apparently a lot of modded blocks that should have a harvest tool set don't, so need a more roundabout way
-        return TEST_PICK.getDestroySpeed(block) > 1;
-    }
-
-    public static boolean isOre(IBlockState block, World world)
-    {
-        Block blockType = block.getBlock();
-        if (blockType instanceof BlockOre || blockType instanceof BlockRedstoneOre) return true;
-
-        //Another weird, roundabout way of detection due to other mods not extending BlockOre
-        ItemStack drop = new ItemStack(blockType.getItemDropped(block, world.rand, 0), 1, blockType.damageDropped(block));
-        if (!(drop.getItem() instanceof ItemBlock)) return true;
-        ItemStack smeltingResult = FurnaceRecipes.instance().getSmeltingResult(drop);
-        return !smeltingResult.isEmpty() && !(smeltingResult.getItem() instanceof ItemBlock);
-    }
-
-    public static boolean isNonMonolithic(World world, IBlockState block)
-    {
-        return isOre(block, world) || block.getBlock().getRegistryName().getResourcePath().contains("cobble");
     }
 
 
